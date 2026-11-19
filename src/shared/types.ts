@@ -286,7 +286,7 @@ export interface BlokApi {
   queue: {
     get(): Promise<QueueState>
     playIndex(index: number): Promise<void>
-    add(videoIds: string[], next: boolean): Promise<boolean>
+    add(videoIds: string[], next: boolean, at?: number): Promise<boolean>
     remove(index: number): Promise<void>
     move(from: number, to: number): Promise<void>
     clear(): Promise<void>
@@ -317,6 +317,7 @@ export interface BlokApi {
     subscribe(channelId: string, subscribe: boolean): Promise<void>
     createPlaylist(title: string, videoIds?: string[]): Promise<string>
     addToPlaylist(playlistId: string, videoIds: string[], allowDuplicates?: boolean): Promise<'added' | 'duplicate'>
+    onPlaylistChanged(cb: (playlistId: string) => void): Unsubscribe
     removeFromPlaylist(playlistId: string, items: PlaylistItemRef[]): Promise<void>
     movePlaylistItems(playlistId: string, moves: PlaylistMove[]): Promise<void>
     editPlaylist(playlistId: string, edit: PlaylistEdit): Promise<void>
@@ -340,8 +341,12 @@ export interface BlokApi {
     getSleep(): Promise<SleepTimer>
     setSleep(minutes: number | 'track' | null): Promise<SleepTimer>
     onSleep(cb: (s: SleepTimer) => void): Unsubscribe
+    popupMenu(items: NativeMenuItem[]): Promise<string | null>
+    confirm(options: { title: string; message: string; confirmLabel: string }): Promise<boolean>
   }
 }
+
+export type NativeMenuItem = { id: string; label: string } | { separator: true }
 
 export interface SleepTimer {
   endsAt: number | null

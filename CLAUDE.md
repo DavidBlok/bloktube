@@ -54,8 +54,8 @@ Renderer (React + TanStack Query + zustand)  ──window.blok──▶  preload
 | `src/preload/engine.ts` | Relays bridge `postMessage` events to main |
 | `src/renderer/src/lib/query.ts` | TanStack `queryClient`, all query options (`queries.home()`, `.collection(id)`, `.artist(id)`, `.search(q, filter)`, `.library()`, `.history()`, `.uploads()`, `.ytmSettings()`, `.lyrics()`, `.color()` …) and track-like cache helpers |
 | `src/renderer/src/lib/mutations.tsx` | `rateTrack` (optimistic across all cached track lists, rollback on error), `useSaveCollection`, `useFollowArtist`, playlist management (`createPlaylist` "My Playlist #N", `addToPlaylist` with the "Already added" dialog, `removeFromPlaylist` (one or many), `movePlaylistItems` (optimistic reorder), `setPlaylistPrivacy`, `useEditPlaylist`, `confirmDeletePlaylist`), `removeFromHistory` |
-| `src/renderer/src/lib/actions.tsx` | Track, multi-selection (`tracksMenu`) and card context menus (incl. the "Add to playlist" submenu built from the cached library's `editable` playlists) |
-| `src/renderer/src/lib/drag.ts` | In-memory state of the current song drag (track rows → reorder in own playlists, or drop on sidebar playlists / Liked Songs) |
+| `src/renderer/src/lib/actions.tsx` | Track, multi-selection (`tracksMenu`) and card context menus (incl. the "Add to playlist" submenu from `playlistMenu()`: New playlist + the cached library's `editable` playlists) |
+| `src/renderer/src/lib/drag.ts` | In-memory state of the current song drag (`startTrackDrag` / `getTrackDrag`) and its drag image: a card with cover, title and artists (several songs: first cover + count badge, "N songs") |
 | `src/renderer/src/lib/appSettings.ts` | App settings store, accent swatches, applies `--accent` / `--accent-hover` |
 | `src/renderer/src/lib/downloads.tsx` | Download actions (`startDownload`, `confirmRemoveDownload`) and hooks (`useTrackDownload`, `usePlaylistDownload`) |
 | `src/renderer/src/lib/offline.ts` | `useOnline()`, `offlineRoute()` (which play target works offline), `localCollection()` / `downloadedLibrary()` (pages and sidebar items built from download state) |
@@ -63,14 +63,14 @@ Renderer (React + TanStack Query + zustand)  ──window.blok──▶  preload
 | `src/renderer/src/store/nav.ts` | Route stack (home, search, collection, artist, browse, lyrics, downloads, history, settings, uploads) with back/forward |
 | `src/renderer/src/store/ui.ts` | Right panel, context menu (items can have a `submenu`), dialog (`confirm` / `editPlaylist`), toast, sticky header |
 | `src/renderer/src/views/*` | Home, Search (+ Browse all moods), Collection (album/playlist/podcast show), Artist, Browse (generic shelves), Lyrics, Downloads (built only from local download state), History (Recently played), Settings, Uploads |
-| `src/renderer/src/components/*` | Sidebar, TopBar (with logo), PlayerBar, RightPanel (now playing / queue), TrackList, Cards, Slider, Overlays (context menu with submenus, dialogs, splash, auth banner), Logo (block mark, animated on the splash), Download (collection download button, row/sidebar status glyph), Offline (offline banner, `OfflineState`, `Pending`), MiniPlayer (rendered instead of `App` when the page hash is `#mini`) |
+| `src/renderer/src/components/*` | Sidebar, TopBar (with logo), PlayerBar, RightPanel (now playing / queue), TrackList, Cards, Slider, common (`Artwork`, `HeartButton`, `PlaylistButton` …), Overlays (context menu with submenus, scrolls when it has none; dialogs, splash, auth banner), Logo (block mark, animated on the splash), Download (collection download button, row/sidebar status glyph), Offline (offline banner, `OfflineState`, `Pending`), MiniPlayer (rendered instead of `App` when the page hash is `#mini`) |
 | `src/renderer/src/styles.css` | All styling. Accent colour is `--accent` |
 
 ### How playback works
 
 - Play: renderer → `player:play` → bridge `play(target)` dispatches a `yt-navigate` event with a `watchEndpoint`/`watchPlaylistEndpoint` on `ytmusic-app`. YouTube Music itself owns playback and the queue.
 - State: bridge watches the `<video>` element and the queue store, posts `player` and `queue` snapshots (deduped) → main → renderer (`player:state`, `queue:changed`).
-- Queue ops use YT Music's own queue store (`#queue.dispatch` with `SET_INDEX`, `REMOVE_ITEM`, `MOVE_ITEM`, `ADD_ITEMS` via `/music/get_queue`). This mirrors Pear Desktop's `src/renderer.ts`.
+- Queue ops use YT Music's own queue store (`#queue.dispatch` with `SET_INDEX`, `REMOVE_ITEM`, `MOVE_ITEM`, `ADD_ITEMS` via `/music/get_queue`). This mirrors Pear Desktop's `src/renderer.ts`. Bridge `queueAdd(videoIds, next, at?)` inserts after the current song (`next`), at the end, or at queue index `at` (the `ADD_ITEMS` payload `index`). Renderer queue indexes are the store's item indexes.
 - API calls go through `ytmusic-app.networkManager.fetch(path, body)`, which handles auth, visitor data and client context. Errors are converted to `Error(message)` in the bridge.
 
 ### How downloads work
@@ -85,13 +85,16 @@ Renderer (React + TanStack Query + zustand)  ──window.blok──▶  preload
 
 ### Desktop extras
 
-- Mini player: a 360×112 frameless always-on-top window (`toggleMini()` in main) loading the renderer with `#mini`. Both windows get every broadcast (`send()`), and each runs its own `initPlayerBindings()` / `initAppSettings()`.
+- Mini player: a 360×112 frameless always-on-top window (`toggleMini()` in main) loading the renderer with `#mini`. Both windows get every broadcast (`send(channel, payload, except?)`), and each runs its own `initPlayerBindings()` / `initAppSettings()`. The window is too small for the app's context menu, dialogs and toast, so its "Add to playlist" button uses a native menu (`app:popupMenu`), `addToPlaylist()` asks about duplicates with a native box (`app:confirm`) when the hash is `#mini`, and toasts replace the artist line for a moment.
+- Playlist sync between windows: after `ytm:createPlaylist` / `ytm:addToPlaylist` succeed, main sends `playlist:changed` (playlist id without `VL`) to the other window, which invalidates `library` and that collection. The window that made the change invalidates its own queries.
 - Sleep timer lives in main (renderer timers get throttled when hidden). Minutes → `setTimeout` → bridge `pause`. "End of track" remembers the current `videoId`; when another track starts, main waits until it reports playing and then pauses it (pausing while it was still loading left YT stuck in "buffering" with a paused video). Repeat-one is detected as the position wrapping to 0.
 - Fade between songs: a Web Audio `GainNode` on the `<video>` (`createMediaElementSource`), driven by the player's `getCurrentTime()` / `getDuration()`. Don't use the element's `currentTime` / `duration`: YT appends the next track to the same MediaSource, so element time includes the previous track.
 - Tray: macOS uses `trayTemplate.png` (template image) in the menu bar; Windows/Linux `tray.png`. "Close to tray" (Windows/Linux) hides instead of closing; on macOS closing the window always hides it.
 - Podcasts: shows (`MPSP<playlistId>`) parse as collections (`kind: 'podcast'`) whose rows are `musicMultiRowListItemRenderer` episodes (`Track.episode` with description/date/progress; durations like "1 hr 5 min"). They play with `{ videoId, playlistId }` like a playlist. The player reports the show (`MPSP…`) as the artist, so `openArtist()` routes `MPSP` ids to the collection view. Followed shows come from `FEmusic_library_non_music_audio_list` (keep `kind === 'podcast'`; the list also holds "New Episodes" `VLRDPN` and "Episodes for Later" `VLSE`).
 - Uploads: `FEmusic_library_privately_owned_tracks` (song rows) and `_releases` (album grid). Uploading isn't implemented; the Upload button opens music.youtube.com in the browser. Bridge `playList(videoIds)` plays exactly the given songs (first via `watchEndpoint`, removes the radio, adds the rest through `/music/get_queue`).
 - Multi-select: Shift/⌘/Ctrl-click in `TrackList`; right-clicking a selected row opens `tracksMenu`. Drag reorder only in own playlists (`variant === 'playlist'`); dropping past the last loaded row of a partially loaded playlist is refused because the server would move the songs to the very end.
+- Song drag and drop: sources are track rows (incl. a multi-selection), every queue panel row (now playing, upcoming, autoplay, "Next in queue") and the player bar's artwork and title (not during ads). Every source calls `startTrackDrag`, so drop targets only check `getTrackDrag()`. Targets: sidebar playlists (`addToPlaylist`, "Already added" dialog) and Liked Songs (`rateTrack` LIKE), the queue panel (on an upcoming row = insert above it, on Now playing = play next, anywhere else = add to end; an empty queue starts playing), the player bar's queue icon (add to end), and rows of the same own playlist (reorder). Dragging an upcoming queue row inside the queue reorders it (`queue.move`); the queue panel tells the two apart by its own `dragFrom` state.
+- "Add to playlist" button (`PlaylistButton`, `ListPlus` icon, signed in only): next to the heart in the player bar (menu opens upwards), the now playing panel, and on hover in track rows. The mini player has its own native-menu version.
 
 ## Gotchas
 
@@ -168,6 +171,7 @@ Verified on the Mac (19 Nov 2026):
 - Multi-select (Shift/⌘), multi-song menu and remove, drag to reorder in own playlists, drop on sidebar playlists ("Already added" dialog), playlist privacy
 - Podcasts: show page, episode playback with the show's queue, save/unsave and the sidebar Podcasts filter
 - Starting offline opens Downloads (simulated by overriding `navigator.onLine` on the UI page)
+- Dragging songs from the queue panel and the player bar onto sidebar playlists
 
 Known issues:
 - Guest playback stopped once after ~40s with YouTube's "Something went wrong"; signed-in playback is fine
@@ -176,6 +180,7 @@ Known issues:
 Not verified yet (needs someone at the Mac or a PC):
 - Media keys / Now Playing (the YT page sets `navigator.mediaSession`), the Dock menu, the menu-bar icon's menu, open at login; Windows taskbar buttons
 - Uploads with real uploaded music; downloading podcast episodes
+- Built 19 Nov 2026, only typechecked: drag into the queue panel / onto the queue icon (insert position), the "Add to playlist" button in the player bar, now playing panel, track rows and mini player (native menu and duplicate box), `playlist:changed` refresh across windows, the drag card image
 
 ## Next steps (suggested order)
 

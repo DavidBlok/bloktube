@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, Menu, nativeTheme, screen, session, shell, type MenuItemConstructorOptions } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, screen, session, shell, type MenuItemConstructorOptions, type WebContents } from 'electron'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { AppSettings, DownloadTarget, LikeStatus, PlayerState, PlaylistEdit, PlaylistItemRef, PlaylistMove, PlayTarget, SearchFilter, SleepTimer, Track } from '../shared/types'
@@ -54,8 +54,8 @@ function saveBounds(): void {
   }
 }
 
-function send(channel: string, payload: unknown): void {
-  for (const w of [mainWindow, miniWindow]) if (w && !w.isDestroyed()) w.webContents.send(channel, payload)
+function send(channel: string, payload: unknown, except?: WebContents): void {
+  for (const w of [mainWindow, miniWindow]) if (w && !w.isDestroyed() && w.webContents !== except) w.webContents.send(channel, payload)
 }
 
 const loginItemSupported = process.platform === 'darwin' || process.platform === 'win32'
@@ -268,7 +268,7 @@ function registerIpc(): void {
   ipcMain.handle('downloads:add', (_e, target: DownloadTarget) => engine.call('download', downloadTarget(target)))
   ipcMain.handle('downloads:remove', (_e, target: DownloadTarget) => engine.call('removeDownload', downloadTarget(target)))
   ipcMain.handle('downloads:clear', () => engine.call('clearDownloads'))
-  ipcMain.handle('queue:add', (_e, ids: string[], next: boolean) => engine.call('queueAdd', ids, next))
+  ipcMain.handle('queue:add', (_e, ids: string[], next: boolean, at?: number) => engine.call('queueAdd', ids, next, at))
   ipcMain.handle('queue:cmd', (_e, method: string, ...args: unknown[]) => {
     if (!QUEUE_COMMANDS.has(method)) throw new Error(`Unknown queue command ${method}`)
     return engine.call(method, ...args)
@@ -290,10 +290,16 @@ function registerIpc(): void {
   ipcMain.handle('ytm:rate', (_e, videoId: string, status: LikeStatus, track?: Track) => ytm.rate(videoId, status, track))
   ipcMain.handle('ytm:saveCollection', (_e, playlistId: string, save: boolean) => ytm.saveCollection(playlistId, save))
   ipcMain.handle('ytm:subscribe', (_e, channelId: string, sub: boolean) => ytm.subscribe(channelId, sub))
-  ipcMain.handle('ytm:createPlaylist', (_e, title: string, videoIds?: string[]) => ytm.createPlaylist(title, videoIds))
-  ipcMain.handle('ytm:addToPlaylist', (_e, playlistId: string, videoIds: string[], allowDuplicates?: boolean) =>
-    ytm.addToPlaylist(playlistId, videoIds, allowDuplicates)
-  )
+  ipcMain.handle('ytm:createPlaylist', async (e, title: string, videoIds?: string[]) => {
+    const id = await ytm.createPlaylist(title, videoIds)
+    send('playlist:changed', id.replace(/^VL/, ''), e.sender)
+    return id
+  })
+  ipcMain.handle('ytm:addToPlaylist', async (e, playlistId: string, videoIds: string[], allowDuplicates?: boolean) => {
+    const res = await ytm.addToPlaylist(playlistId, videoIds, allowDuplicates)
+    if (res === 'added') send('playlist:changed', playlistId.replace(/^VL/, ''), e.sender)
+    return res
+  })
   ipcMain.handle('ytm:removeFromPlaylist', (_e, playlistId: string, items: PlaylistItemRef[]) => ytm.removeFromPlaylist(playlistId, items))
   ipcMain.handle('ytm:movePlaylistItems', (_e, playlistId: string, moves: PlaylistMove[]) => {
     const str = (v: unknown) => typeof v === 'string' && v.length > 0 && v.length < 200
@@ -330,6 +336,27 @@ function registerIpc(): void {
   })
   ipcMain.handle('app:toggleMini', () => toggleMini())
   ipcMain.handle('app:showMain', () => showMain())
+  ipcMain.handle('app:popupMenu', (e, items: unknown) => {
+    const window = BrowserWindow.fromWebContents(e.sender)
+    if (!window || !Array.isArray(items)) return null
+    return new Promise<string | null>((resolve) => {
+      const template: MenuItemConstructorOptions[] = items.slice(0, 300).map((it) =>
+        it?.separator ? { type: 'separator' } : { label: String(it?.label ?? ''), click: () => resolve(String(it?.id ?? '')) }
+      )
+      Menu.buildFromTemplate(template).popup({ window, callback: () => setTimeout(() => resolve(null), 200) })
+    })
+  })
+  ipcMain.handle('app:confirm', async (_e, o: { title?: unknown; message?: unknown; confirmLabel?: unknown }) => {
+    const { response } = await dialog.showMessageBox({
+      type: 'question',
+      buttons: [String(o?.confirmLabel ?? 'OK'), 'Cancel'],
+      defaultId: 0,
+      cancelId: 1,
+      message: String(o?.title ?? ''),
+      detail: String(o?.message ?? '')
+    })
+    return response === 0
+  })
   ipcMain.handle('app:getSleep', () => sleepState())
   ipcMain.handle('app:setSleep', async (_e, minutes: unknown) => {
     if (minutes === 'track' && !lastPlayer?.videoId) lastPlayer = ((await engine.call('state').catch(() => null)) as PlayerState | null) ?? lastPlayer

@@ -1,15 +1,16 @@
-import { useState } from 'react'
+import { useState, type DragEvent } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { X } from 'lucide-react'
-import type { QueueItem } from '@shared/types'
+import type { QueueItem, Track } from '@shared/types'
 import { blok } from '../api'
 import { trackMenu } from '../lib/actions'
+import { endTrackDrag, getTrackDrag, startTrackDrag } from '../lib/drag'
 import { hiRes } from '../lib/format'
 import { queries } from '../lib/query'
 import { openAlbum, openArtist } from '../store/nav'
 import { usePlayer } from '../store/player'
 import { useUi } from '../store/ui'
-import { ArtistLinks, Artwork, Equalizer, HeartButton } from './common'
+import { ArtistLinks, Artwork, Equalizer, HeartButton, PlaylistButton } from './common'
 
 export function RightPanel() {
   const panel = useUi((s) => s.rightPanel)
@@ -70,6 +71,7 @@ function NowPlayingPanel() {
             </div>
           </div>
           <HeartButton liked={s.like === 'LIKE'} onToggle={() => blok.player.toggleLike()} size={20} />
+          {!s.adPlaying && <PlaylistButton videoId={s.videoId} size={20} />}
         </div>
 
         {artist.data && (
@@ -105,20 +107,48 @@ function QueuePanel() {
   const queue = usePlayer((x) => x.queue)
   const context = usePlayer((x) => x.context)
   const [dragFrom, setDragFrom] = useState<number | null>(null)
-  const [dragOver, setDragOver] = useState<number | null>(null)
+  const [over, setOver] = useState<number | 'end' | null>(null)
   const current = queue.index >= 0 ? queue.items[queue.index] : undefined
   const upcoming = queue.items.map((item, index) => ({ item, index })).filter(({ index }) => index > queue.index)
+  const next = upcoming.length ? queue.index + 1 : 'end'
+
+  const reset = () => {
+    setDragFrom(null)
+    setOver(null)
+  }
+  const accept = (at: number | 'end', e: DragEvent) => {
+    if (dragFrom !== null || !getTrackDrag()) return false
+    e.preventDefault()
+    e.stopPropagation()
+    e.dataTransfer.dropEffect = 'copy'
+    if (over !== at) setOver(at)
+    return true
+  }
+  const insert = (at: number | 'end', e: DragEvent) => {
+    const drag = getTrackDrag()
+    if (dragFrom !== null || !drag) return
+    e.preventDefault()
+    e.stopPropagation()
+    reset()
+    const ids = [...new Set(drag.tracks.map((t) => t.videoId))]
+    usePlayer.getState().addToQueue(ids, at === queue.index + 1, at === 'end' ? undefined : at)
+  }
 
   return (
     <>
       <PanelHeader title="Queue" />
-      <div className="rp-scroll">
+      <div
+        className={`rp-scroll ${over === 'end' ? 'drop-target' : ''}`}
+        onDragOver={(e) => accept('end', e)}
+        onDragLeave={(e) => !e.currentTarget.contains(e.relatedTarget as Node) && setOver(null)}
+        onDrop={(e) => insert('end', e)}
+      >
         {!current && !upcoming.length ? (
           <div className="rp-empty">Your queue is empty.</div>
         ) : (
           <>
             {current && (
-              <section className="q-section">
+              <section className="q-section" onDragOver={(e) => accept(next, e)} onDrop={(e) => insert(next, e)}>
                 <h4>Now playing</h4>
                 <QueueRow item={current} index={queue.index} current />
               </section>
@@ -131,24 +161,24 @@ function QueuePanel() {
                 {upcoming.map(({ item, index }) => (
                   <div
                     key={`${item.videoId}-${index}`}
-                    className={`q-drag ${dragOver === index ? 'over' : ''}`}
-                    draggable
+                    className={`q-drag ${over === index ? 'over' : ''}`}
                     onDragStart={() => setDragFrom(index)}
                     onDragOver={(e) => {
+                      if (dragFrom === null) return accept(index, e)
                       e.preventDefault()
-                      setDragOver(index)
+                      e.stopPropagation()
+                      e.dataTransfer.dropEffect = 'move'
+                      if (over !== index) setOver(index)
                     }}
-                    onDragLeave={() => setDragOver((o) => (o === index ? null : o))}
+                    onDragLeave={(e) => !e.currentTarget.contains(e.relatedTarget as Node) && setOver((o) => (o === index ? null : o))}
                     onDrop={(e) => {
+                      if (dragFrom === null) return insert(index, e)
                       e.preventDefault()
-                      if (dragFrom !== null && dragFrom !== index) blok.queue.move(dragFrom, index)
-                      setDragFrom(null)
-                      setDragOver(null)
+                      e.stopPropagation()
+                      if (dragFrom !== index) blok.queue.move(dragFrom, index)
+                      reset()
                     }}
-                    onDragEnd={() => {
-                      setDragFrom(null)
-                      setDragOver(null)
-                    }}
+                    onDragEnd={reset}
                   >
                     <QueueRow item={item} index={index} removable />
                   </div>
@@ -179,6 +209,18 @@ function QueuePanel() {
 function QueueRow({ item, index, current, removable }: { item: QueueItem; index: number; current?: boolean; removable?: boolean }) {
   const playing = usePlayer((x) => !!x.state?.playing)
   const openMenu = useUi((s) => s.openMenu)
+  const track = (): Track => {
+    const now = usePlayer.getState().state
+    return {
+      videoId: item.videoId,
+      title: item.title,
+      artists: item.artists,
+      album: item.album ?? null,
+      thumb: item.thumb,
+      duration: item.duration,
+      likeStatus: now?.videoId === item.videoId ? now.like : undefined
+    }
+  }
   const play = () => {
     if (current) blok.player.toggle()
     else if (index >= 0) blok.queue.playIndex(index)
@@ -187,17 +229,13 @@ function QueueRow({ item, index, current, removable }: { item: QueueItem; index:
   return (
     <div
       className={`q-row ${current ? 'current' : ''}`}
+      draggable
+      onDragStart={(e) => startTrackDrag(e, { tracks: [track()] })}
+      onDragEnd={endTrackDrag}
       onDoubleClick={play}
       onContextMenu={(e) => {
         e.preventDefault()
-        openMenu(
-          e.clientX,
-          e.clientY,
-          trackMenu(
-            { videoId: item.videoId, title: item.title, artists: item.artists, album: item.album ?? null },
-            { onRemove: removable ? () => blok.queue.remove(index) : undefined }
-          )
-        )
+        openMenu(e.clientX, e.clientY, trackMenu(track(), { onRemove: removable ? () => blok.queue.remove(index) : undefined }))
       }}
     >
       <div className="q-art" onClick={play}>

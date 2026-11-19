@@ -1,9 +1,12 @@
 import { Fragment, useEffect, useState, type MouseEvent, type ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Heart, LoaderCircle, Music, Pause, Play } from 'lucide-react'
+import { Heart, ListPlus, LoaderCircle, Music, Pause, Play } from 'lucide-react'
 import type { Ref } from '@shared/types'
+import { playlistMenu } from '../lib/actions'
 import { queries } from '../lib/query'
 import { openArtist } from '../store/nav'
+import { usePlayer } from '../store/player'
+import { useUi } from '../store/ui'
 
 export function Artwork({
   src,
@@ -138,6 +141,25 @@ export function HeartButton({
       title={liked ? 'Remove from Liked Songs' : 'Save to Liked Songs'}
     >
       <Heart size={size} fill={liked ? 'currentColor' : 'none'} />
+    </button>
+  )
+}
+
+export function PlaylistButton({ videoId, size = 17, above = false, className = '' }: { videoId: string; size?: number; above?: boolean; className?: string }) {
+  const signedIn = usePlayer((x) => x.auth.status === 'signed-in')
+  if (!signedIn) return null
+  return (
+    <button
+      className={`icon-btn ${className}`}
+      onClick={(e) => {
+        e.stopPropagation()
+        const r = e.currentTarget.getBoundingClientRect()
+        useUi.getState().openMenu(above ? r.left : r.right, above ? r.top - 8 : r.bottom + 8, playlistMenu([videoId]), { above, right: !above })
+      }}
+      title="Add to playlist"
+      aria-label="Add to playlist"
+    >
+      <ListPlus size={size} />
     </button>
   )
 }

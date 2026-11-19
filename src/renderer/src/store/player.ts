@@ -20,7 +20,7 @@ interface PlayerStore {
   sleep: SleepTimer
   play: (target: PlayTarget | undefined, context?: PlayContext | null) => Promise<void>
   playLocal: (videoIds: string[], context?: PlayContext | null) => Promise<void>
-  addToQueue: (videoIds: string[], next: boolean) => Promise<void>
+  addToQueue: (videoIds: string[], next: boolean, at?: number) => Promise<void>
 }
 
 const EMPTY_QUEUE: QueueState = { items: [], index: -1, autoplay: [] }
@@ -63,9 +63,9 @@ export const usePlayer = create<PlayerStore>((set, get) => ({
     }
   },
 
-  async addToQueue(videoIds, next) {
+  async addToQueue(videoIds, next, at) {
     try {
-      const ok = await blok.queue.add(videoIds, next)
+      const ok = await blok.queue.add(videoIds, next, at)
       if (ok) toast(next ? 'Playing next' : 'Added to queue')
       else {
         await get().play({ videoId: videoIds[0] }, null)
@@ -111,6 +111,10 @@ export function initPlayerBindings() {
     queryClient.invalidateQueries()
   })
   blok.auth.get().then((auth) => usePlayer.setState({ auth }))
+  blok.ytm.onPlaylistChanged((id) => {
+    queryClient.invalidateQueries({ queryKey: queries.library().queryKey })
+    queryClient.invalidateQueries({ queryKey: queries.collection(`VL${id}`).queryKey })
+  })
   blok.queue
     .get()
     .then((queue) => usePlayer.setState({ queue }))

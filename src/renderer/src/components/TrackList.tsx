@@ -8,7 +8,7 @@ import { movePlaylistItems, rateTrack } from '../lib/mutations'
 import { openAlbum } from '../store/nav'
 import { usePlayer } from '../store/player'
 import { toast, useUi, type MenuItem } from '../store/ui'
-import { ArtistLinks, Artwork, Equalizer, HeartButton } from './common'
+import { ArtistLinks, Artwork, Equalizer, HeartButton, PlaylistButton } from './common'
 import { DownloadGlyph } from './Download'
 
 export type TrackListVariant = 'playlist' | 'album' | 'search' | 'popular' | 'episodes'
@@ -269,6 +269,7 @@ const Row = memo(function Row(props: RowProps) {
       )}
       {(variant === 'album' || variant === 'popular') && <div className="tl-plays">{t.views?.replace(/\s*(plays|views)$/i, '') ?? ''}</div>}
       <div className="tl-duration">
+        {!unavailable && <PlaylistButton videoId={t.videoId} size={16} className="tl-add" />}
         <HeartButton liked={t.likeStatus === 'LIKE'} onToggle={onRate} className="tl-heart" />
         <span>{t.duration ?? ''}</span>
         <button

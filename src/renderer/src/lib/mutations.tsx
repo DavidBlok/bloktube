@@ -43,6 +43,11 @@ export async function addToPlaylist(playlist: PlaylistRef, videoIds: string[], a
   try {
     const res = await blok.ytm.addToPlaylist(playlistIdOf(playlist.id), videoIds, allowDuplicates)
     if (res === 'duplicate') {
+      if (location.hash === '#mini') {
+        const again = await blok.app.confirm({ title: 'Already added', message: `This is already in your ${playlist.title} playlist.`, confirmLabel: 'Add anyway' })
+        if (again) await addToPlaylist(playlist, videoIds, true)
+        return
+      }
       useUi.getState().openDialog({
         kind: 'confirm',
         title: 'Already added',

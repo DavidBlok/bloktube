@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type DragEvent } from 'react'
 import {
   ListMusic,
   MicVocal,
@@ -19,11 +19,12 @@ import {
   VolumeX
 } from 'lucide-react'
 import { blok } from '../api'
+import { endTrackDrag, getTrackDrag, startTrackDrag } from '../lib/drag'
 import { formatTime } from '../lib/format'
 import { openAlbum, useNav } from '../store/nav'
 import { livePosition, usePlayer } from '../store/player'
 import { useUi } from '../store/ui'
-import { ArtistLinks, Artwork, HeartButton } from './common'
+import { ArtistLinks, Artwork, HeartButton, PlaylistButton } from './common'
 import { Slider } from './Slider'
 
 export function useLivePosition(intervalMs = 250): number {
@@ -86,6 +87,15 @@ export function PlayerBar() {
     volTimer.current = setTimeout(() => blok.player.setVolume(v), 40)
   }
 
+  const [queueOver, setQueueOver] = useState(false)
+  const draggable = has && !s!.adPlaying
+  const dragStart = (e: DragEvent) => {
+    if (!s?.videoId) return
+    startTrackDrag(e, {
+      tracks: [{ videoId: s.videoId, title: s.title, artists: s.artists, album: s.album, thumb: s.thumb, likeStatus: s.like }]
+    })
+  }
+
   const toggleLyrics = () => {
     const nav = useNav.getState()
     if (onLyrics) nav.back()
@@ -97,10 +107,17 @@ export function PlayerBar() {
       <div className="pb-left">
         {has && (
           <>
-            <button className="pb-art" onClick={() => toggleRightPanel('nowplaying')} title="Now playing view">
+            <button
+              className="pb-art"
+              onClick={() => toggleRightPanel('nowplaying')}
+              title="Now playing view"
+              draggable={draggable}
+              onDragStart={dragStart}
+              onDragEnd={endTrackDrag}
+            >
               <Artwork src={s!.thumb} size={56} />
             </button>
-            <div className="pb-meta">
+            <div className="pb-meta" draggable={draggable} onDragStart={dragStart} onDragEnd={endTrackDrag}>
               <div className="pb-title" title={s!.title}>
                 {s!.adPlaying ? (
                   <span className="muted">Advertisement</span>
@@ -116,7 +133,10 @@ export function PlayerBar() {
                 <ArtistLinks artists={s!.artists} />
               </div>
             </div>
-            <HeartButton liked={s!.like === 'LIKE'} onToggle={() => blok.player.toggleLike()} />
+            <div className="pb-actions">
+              <HeartButton liked={s!.like === 'LIKE'} onToggle={() => blok.player.toggleLike()} />
+              {!s!.adPlaying && <PlaylistButton videoId={s!.videoId!} above />}
+            </div>
           </>
         )}
       </div>
@@ -167,7 +187,25 @@ export function PlayerBar() {
         <button className={`icon-btn ${onLyrics ? 'active dot' : ''}`} onClick={toggleLyrics} title="Lyrics" disabled={!has}>
           <MicVocal size={18} />
         </button>
-        <button className={`icon-btn ${rightPanel === 'queue' ? 'active dot' : ''}`} onClick={() => toggleRightPanel('queue')} title="Queue">
+        <button
+          className={`icon-btn ${rightPanel === 'queue' ? 'active dot' : ''} ${queueOver ? 'drop-target' : ''}`}
+          onClick={() => toggleRightPanel('queue')}
+          title="Queue"
+          onDragOver={(e) => {
+            if (!getTrackDrag()) return
+            e.preventDefault()
+            e.dataTransfer.dropEffect = 'copy'
+            if (!queueOver) setQueueOver(true)
+          }}
+          onDragLeave={() => setQueueOver(false)}
+          onDrop={(e) => {
+            const drag = getTrackDrag()
+            setQueueOver(false)
+            if (!drag) return
+            e.preventDefault()
+            usePlayer.getState().addToQueue([...new Set(drag.tracks.map((t) => t.videoId))], false)
+          }}
+        >
           <ListMusic size={18} />
         </button>
         {s?.isVideo && (

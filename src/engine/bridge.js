@@ -626,7 +626,7 @@
       for (let i = items.length - 1; i >= 0; i--) if (i !== current) q?.dispatch({ type: 'REMOVE_ITEM', payload: i })
       kickQueue()
     },
-    async queueAdd(videoIds, next) {
+    async queueAdd(videoIds, next, at) {
       const q = queueEl()
       const s = store()
       if (!q || !s) return false
@@ -646,7 +646,7 @@
         type: 'ADD_ITEMS',
         payload: {
           nextQueueItemId: s.getState().queue.nextQueueItemId,
-          index: next ? (selected >= 0 ? selected + 1 : cur.length) : cur.length,
+          index: Number.isInteger(at) ? Math.max(0, Math.min(at, cur.length)) : next ? (selected >= 0 ? selected + 1 : cur.length) : cur.length,
           items,
           shuffleEnabled: false,
           shouldAssignIds: true

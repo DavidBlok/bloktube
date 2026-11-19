@@ -90,7 +90,12 @@ export function ContextMenu() {
 
   if (!menu) return null
   return (
-    <div ref={ref} className="context-menu" style={{ left: pos.x, top: pos.y }} onContextMenu={(e) => e.preventDefault()}>
+    <div
+      ref={ref}
+      className={`context-menu ${menu.items.some((it) => it.submenu) ? '' : 'scroll'}`}
+      style={{ left: pos.x, top: pos.y }}
+      onContextMenu={(e) => e.preventDefault()}
+    >
       {menu.items.map((it, i) =>
         it.divider ? (
           <div key={i} className="cm-divider" />

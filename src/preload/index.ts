@@ -40,7 +40,7 @@ const api: BlokApi = {
   queue: {
     get: () => invoke('queue:get'),
     playIndex: (i) => queue('queuePlayIndex', i),
-    add: (ids, next) => invoke('queue:add', ids, next),
+    add: (ids, next, at) => invoke('queue:add', ids, next, at),
     remove: (i) => queue('queueRemove', i),
     move: (from, to) => queue('queueMove', from, to),
     clear: () => queue('queueClear'),
@@ -71,6 +71,7 @@ const api: BlokApi = {
     subscribe: (channelId, sub) => invoke('ytm:subscribe', channelId, sub),
     createPlaylist: (title, videoIds) => invoke('ytm:createPlaylist', title, videoIds),
     addToPlaylist: (playlistId, videoIds, allowDuplicates) => invoke('ytm:addToPlaylist', playlistId, videoIds, allowDuplicates),
+    onPlaylistChanged: (cb) => listen('playlist:changed', cb),
     removeFromPlaylist: (playlistId, items) => invoke('ytm:removeFromPlaylist', playlistId, items),
     movePlaylistItems: (playlistId, moves) => invoke('ytm:movePlaylistItems', playlistId, moves),
     editPlaylist: (playlistId, edit) => invoke('ytm:editPlaylist', playlistId, edit),
@@ -93,7 +94,9 @@ const api: BlokApi = {
     showMain: () => invoke('app:showMain'),
     getSleep: () => invoke('app:getSleep'),
     setSleep: (minutes) => invoke('app:setSleep', minutes),
-    onSleep: (cb) => listen('sleep:changed', cb)
+    onSleep: (cb) => listen('sleep:changed', cb),
+    popupMenu: (items) => invoke('app:popupMenu', items),
+    confirm: (options) => invoke('app:confirm', options)
   }
 }
 

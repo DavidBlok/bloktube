@@ -24,20 +24,18 @@ export function copy(text: string, message = 'Link copied to clipboard') {
     .catch(() => toast('Could not copy link'))
 }
 
-function playlistItems(videoIds: string[]): MenuItem[] {
-  if (usePlayer.getState().auth.status !== 'signed-in') return []
+export function playlistMenu(videoIds: string[]): MenuItem[] {
   const own = ownPlaylists()
   return [
-    {
-      label: 'Add to playlist',
-      icon: <ListPlus size={16} />,
-      submenu: [
-        { label: 'New playlist', icon: <Plus size={16} />, onClick: () => createPlaylist(videoIds) },
-        ...(own.length ? [{ label: '', divider: true }] : []),
-        ...own.map((p) => ({ label: p.title, icon: <ListMusic size={16} />, onClick: () => addToPlaylist(p, videoIds) }))
-      ]
-    }
+    { label: 'New playlist', icon: <Plus size={16} />, onClick: () => createPlaylist(videoIds) },
+    ...(own.length ? [{ label: '', divider: true }] : []),
+    ...own.map((p) => ({ label: p.title, icon: <ListMusic size={16} />, onClick: () => addToPlaylist(p, videoIds) }))
   ]
+}
+
+function playlistItems(videoIds: string[]): MenuItem[] {
+  if (usePlayer.getState().auth.status !== 'signed-in') return []
+  return [{ label: 'Add to playlist', icon: <ListPlus size={16} />, submenu: playlistMenu(videoIds) }]
 }
 
 function downloadItem(videoId: string, title: string): MenuItem[] {
