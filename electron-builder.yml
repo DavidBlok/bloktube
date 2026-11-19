@@ -1,0 +1,42 @@
+appId: com.blok.bloktube
+productName: BlokTube
+copyright: Copyright © 2026 BlokTube
+directories:
+  output: dist
+  buildResources: build
+files:
+  - out/**
+  - resources/*.png
+  - package.json
+asarUnpack:
+  - resources/*.png
+artifactName: ${productName}-${version}-${os}-${arch}.${ext}
+
+mac:
+  category: public.app-category.music
+  identity: '-'
+  hardenedRuntime: false
+  target:
+    - target: dmg
+      arch: [arm64, x64]
+dmg:
+  artifactName: ${productName}-${version}-mac-${arch}.${ext}
+
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+nsis:
+  artifactName: ${productName}-Setup-${version}-win-${arch}.${ext}
+  oneClick: true
+  perMachine: false
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: BlokTube
+
+linux:
+  category: AudioVideo;Audio;Player
+  synopsis: Spotify-style desktop client for YouTube Music
+  target:
+    - target: AppImage
+      arch: [x64]
